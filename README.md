@@ -12,6 +12,7 @@ This project implements and applies Sparse Bayesian Discriminant Analysis (SBDA)
 ├── TrainData.mat            # Processed training data
 ├── TestData.mat             # Processed testing data
 ├── windsorize.m             # Function to apply Windsorization
+├── SBDA.m                   # Full implementation of Sparse Bayesian Discriminant Analysis
 ├── SBDA_easy.m              # Sparse Bayesian Discriminant Analysis implementation
 ├── fcs.m                    # Fisher Criterion Score for feature selection
 ├── extract.m                # Feature extraction function
@@ -23,6 +24,12 @@ This project implements and applies Sparse Bayesian Discriminant Analysis (SBDA)
 
 ### Scripts
 
+#### `SBDA.m`
+- Implements the full version of Sparse Bayesian Discriminant Analysis.
+- Includes group-level feature handling, iterative updates of weights, and hyperparameters (`alpha`, `beta`).
+- Provides detailed convergence criteria based on evidence and weight changes.
+- Suitable for datasets with hierarchical or grouped feature structures.
+  
 #### `SBDA_easy.m`
 - Implements a simplified version of Sparse Bayesian Discriminant Analysis.
 - Iteratively updates weights (`w`), hyperparameters (`alpha` and `beta`), and evidence to identify the most relevant features for classification.
