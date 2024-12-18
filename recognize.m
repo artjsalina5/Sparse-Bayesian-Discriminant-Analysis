@@ -1,4 +1,4 @@
-function char_guess=recognite(x)
+function char_guess = recognize(x)
 
     screen =   ['A' 'B' 'C' 'D' 'E' 'F';
                 'G' 'H' 'I' 'J' 'K' 'L';
