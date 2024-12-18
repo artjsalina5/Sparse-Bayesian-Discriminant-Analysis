@@ -1,53 +1,58 @@
 %{
-第五个预处理：统计去极化
-系数：0.1和0.9可以调节
+Windsorize: Preprocesses the data by applying Windsorization to remove outliers.
+Keeps data within the 10th and 90th percentiles by replacing extreme values.
+
+Input:
+R - 3D matrix (no x window x ch), where:
+    no: Number of trials
+    window: Number of samples in each trial
+    ch: Number of channels
+
+Output:
+RR - 3D matrix after Windsorization
 %}
 function RR = windsorize(R)
-    [no,window,ch]=size(R);
-    D = zeros(no*window,ch);
-    RR=zeros(no,window,ch);
-    %同个电极的数据叠起来
-    for i =1:64
-        for j=1:size(R,1)
-            D((j-1)*window+1:j*window,i)= R(j,:,i);
+    [no, window, ch] = size(R); % Dimensions of input matrix
+    D = zeros(no * window, ch); % Flattened data matrix (for processing)
+    RR = zeros(no, window, ch); % Preprocessed output matrix
+    
+    % Flatten the data from 3D to 2D for processing
+    for i = 1:ch
+        for j = 1:no
+            D((j-1)*window + 1:j*window, i) = R(j, :, i);
         end
     end
-    %统计去极化
-    flag1=0.1*no*window;
-    flag2=0.9*no*window;
-    flag1val=zeros(64);
-    flag2val=zeros(64);
-    [~, idx] = sort(D,'descend'); 
-     %获得前10%和前90%的阈值大小
-    for ii=1:64
-       for jj=1:no*window
-          if idx(jj,ii)==flag1
-              flag1val(ii)=D(jj,ii);
-          else if idx(jj,ii)==flag2
-              flag2val(ii)=D(jj,ii);
-              end
-          end
-       end
+
+    % Calculate thresholds for Windsorization
+    lowerLimitIdx = round(0.1 * no * window); % 10th percentile index
+    upperLimitIdx = round(0.9 * no * window); % 90th percentile index
+    lowerLimitVals = zeros(ch, 1); % Storage for 10th percentile values
+    upperLimitVals = zeros(ch, 1); % Storage for 90th percentile values
+    
+    % Sort data along each channel
+    [~, idx] = sort(D, 'descend'); 
+
+    % Find the 10th and 90th percentile values for each channel
+    for ii = 1:ch
+        lowerLimitVals(ii) = D(idx(lowerLimitIdx, ii), ii);
+        upperLimitVals(ii) = D(idx(upperLimitIdx, ii), ii);
     end
     
-    for iii=1:64
-       %更换前10%和前90%的数据
-       for jjj=1:no*window
-          if idx(jjj,iii)>=flag2
-              D(jjj,iii)=flag2val(iii);
-          else if idx(jjj,iii)<=flag1;
-                  D(jjj,iii)=flag1val(iii);
-              end
-          end
-       end
-    end
-    
-    %拆解电极叠加的数据
-    for iiii =1:64
-        for jjjj=1:size(R,1)
-            RR(jjjj,:,iiii)=D((jjjj-1)*window+1:jjjj*window,iiii);
+    % Apply Windsorization: Replace values outside the range
+    for iii = 1:ch
+        for jjj = 1:no * window
+            if D(jjj, iii) >= upperLimitVals(iii)
+                D(jjj, iii) = upperLimitVals(iii);
+            elseif D(jjj, iii) <= lowerLimitVals(iii)
+                D(jjj, iii) = lowerLimitVals(iii);
+            end
         end
     end
-    
-    
+
+    % Reshape the processed data back to the original 3D format
+    for iiii = 1:ch
+        for jjjj = 1:no
+            RR(jjjj, :, iiii) = D((jjjj-1)*window + 1:jjjj*window, iiii);
+        end
+    end
 end
