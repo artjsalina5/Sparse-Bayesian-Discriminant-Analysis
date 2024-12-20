@@ -1,120 +1,116 @@
-%% Implementation of DTW and BCPD for SBDA Features
-% This script takes vital features (output of SBDA), computes DTW, and
-% applies Bayesian Change Point Detection (BCPD) to identify state transitions.
+%% BCPD and DTW Implementation for Stress Detection
+% This script implements Bayesian Change Point Detection (BCPD) and Dynamic Time Warping (DTW)
+% to analyze physiological signal features and identify stress-related changes.
 
 clc; clear;
 
 %% Parameters
-sampling_rate = 256; % Sampling frequency in Hz
-window_size = 10 * sampling_rate; % 10-second windows
-step_size = 5 * sampling_rate; % 50% overlap
+sampling_rate = 256; % Sampling frequency (Hz)
+dtw_window_size = 60 * sampling_rate; % 60 seconds for DTW comparison
 alpha_prior = 1; % Bayesian prior for mean
 beta_prior = 1; % Bayesian prior for precision
 
-%% Load Features (Output of SBDA)
-% Assume we have a struct `vital_features` containing the SBDA output
-% vital_features.time: Timestamps of the features
-% vital_features.data: Matrix (N x F) of extracted features, where
-% N = number of samples and F = number of features
-load('vital_features.mat'); % Replace with actual SBDA output file
+%% Load Features
+% Replace these placeholders with actual feature data
+% `features` should be a struct with fields:
+%   - time: Time stamps of the features
+%   - data: Feature matrix (N x F), where N = samples, F = features
+load('vital_features.mat'); % Output from SBDA or previous feature extraction
 
-% Extract data and timestamps
-timestamps = vital_features.time; % Timestamps (seconds)
-features = vital_features.data; % Extracted features (N x F)
+timestamps = vital_features.time;
+features = vital_features.data;
 
-%% Step 1: Segment Features for DTW
-% Divide features into overlapping windows
-[feature_segments, num_segments] = segment_features(features, window_size, step_size);
+%% Step 1: Bayesian Change Point Detection (BCPD)
+% Detect change points in feature time series using BCPD
 
-% Initialize DTW distance matrix
-dtw_distances = zeros(num_segments, num_segments);
-
-%% Step 2: Compute DTW for Feature Alignment
-% Compare feature windows pairwise using DTW
-for i = 1:num_segments
-    for j = i:num_segments
-        dtw_distances(i, j) = compute_dtw(feature_segments{i}, feature_segments{j});
-        dtw_distances(j, i) = dtw_distances(i, j); % Symmetric matrix
-    end
-end
-
-%% Step 3: Apply Bayesian Change Point Detection (BCPD)
 % Initialize variables for BCPD
-mean_dtw = mean(dtw_distances, 2); % Mean DTW distance for each segment
-var_dtw = var(dtw_distances, 0, 2); % Variance of DTW distances
-change_points = []; % Store detected change points
+[num_samples, num_features] = size(features);
+change_points = [];
+segment_means = [];
+segment_vars = [];
 
-% Iterate through DTW distance matrix
-for i = 2:num_segments
-    % Update posterior parameters
-    alpha_post = alpha_prior + i / 2;
-    beta_post = beta_prior + 0.5 * sum((mean_dtw(1:i) - mean(mean_dtw(1:i))).^2);
+% Iterate through features to identify change points
+for i = 2:num_samples
+    % Compute posterior parameters
+    segment = features(1:i, :); % Current segment
+    segment_mean = mean(segment, 1);
+    segment_var = var(segment, 0, 1);
+
+    alpha_post = alpha_prior + size(segment, 1) / 2;
+    beta_post = beta_prior + 0.5 * sum((segment - segment_mean).^2, 'all');
 
     % Posterior mean and variance
-    post_mean = beta_post / alpha_post; % Posterior mean
-    post_var = 1 / alpha_post; % Posterior variance
+    post_mean = beta_post / alpha_post;
+    post_var = 1 / alpha_post;
 
-    % Detect change points based on posterior shifts
-    if abs(mean_dtw(i) - post_mean) > 2 * sqrt(post_var) || ...
-       abs(var_dtw(i) - post_var) > 0.5 * post_var
-        change_points = [change_points; i];
+    % Detect significant changes
+    if ~isempty(segment_means)
+        if any(abs(segment_mean - segment_means(end, :)) > 2 * sqrt(segment_vars(end, :))) || ...
+           any(abs(segment_var - segment_vars(end, :)) > 0.5 * segment_vars(end, :))
+            change_points = [change_points; i];
+        end
     end
+
+    % Update segment statistics
+    segment_means = [segment_means; segment_mean];
+    segment_vars = [segment_vars; segment_var];
 end
 
-fprintf('Detected %d change points.\n', length(change_points));
+fprintf('Detected %d change points using BCPD.\n', length(change_points));
 
-%% Step 4: Visualize Results
-% Plot DTW distance matrix
-figure;
-imagesc(dtw_distances);
-colorbar;
-title('DTW Distance Matrix');
-xlabel('Segment Index');
-ylabel('Segment Index');
+%% Step 2: Dynamic Time Warping (DTW) for Validation
+% Compare feature segments using DTW to validate BCPD change points
 
-% Plot mean DTW distances with detected change points
+dtw_distances = zeros(length(change_points) - 1, 1);
+
+for i = 1:length(change_points) - 1
+    % Define segments around change points
+    start_idx = change_points(i);
+    end_idx = min(change_points(i+1), num_samples);
+    segment1 = features(start_idx:end_idx, :);
+
+    if i + 2 <= length(change_points)
+        next_start_idx = change_points(i+1);
+        next_end_idx = min(change_points(i+2), num_samples);
+        segment2 = features(next_start_idx:next_end_idx, :);
+    else
+        segment2 = features(end_idx:end, :);
+    end
+
+    % Compute DTW distance
+    dtw_distances(i) = compute_dtw(segment1, segment2);
+end
+
+fprintf('Computed DTW distances for %d segment pairs.\n', length(dtw_distances));
+
+%% Step 3: Visualize Results
+% Plot BCPD results and DTW distances
 figure;
-plot(1:num_segments, mean_dtw, '-b', 'LineWidth', 1.5);
+subplot(2, 1, 1);
+plot(timestamps, features(:, 1), 'b', 'LineWidth', 1.5);
 hold on;
 for cp = change_points'
-    xline(cp, 'r--', 'LineWidth', 1.5);
+    xline(timestamps(cp), 'r--', 'LineWidth', 1.5);
 end
-title('Mean DTW Distances with Detected Change Points');
-xlabel('Segment Index');
-ylabel('Mean DTW Distance');
+title('Feature Time Series with Detected Change Points');
+xlabel('Time (s)');
+ylabel('Feature Value');
 hold off;
 
+subplot(2, 1, 2);
+bar(dtw_distances);
+title('DTW Distances Between Segments');
+xlabel('Segment Pair Index');
+ylabel('DTW Distance');
+
 %% Supporting Functions
-
-function [segments, num_segments] = segment_features(features, window_size, step_size)
-    % Divide features into overlapping windows.
-    %
-    % Inputs:
-    % - features: Feature matrix (N x F)
-    % - window_size: Size of each window (in samples)
-    % - step_size: Step size for overlapping windows (in samples)
-    %
-    % Outputs:
-    % - segments: Cell array of feature windows
-    % - num_segments: Total number of segments
-
-    [num_samples, ~] = size(features);
-    num_segments = floor((num_samples - window_size) / step_size) + 1;
-    segments = cell(num_segments, 1);
-
-    for i = 1:num_segments
-        start_idx = (i-1) * step_size + 1;
-        end_idx = start_idx + window_size - 1;
-        segments{i} = features(start_idx:end_idx, :);
-    end
-end
 
 function distance = compute_dtw(features1, features2)
     % Compute DTW distance between two feature sets.
     %
     % Inputs:
-    % - features1: Feature matrix for the first segment (W1 x F)
-    % - features2: Feature matrix for the second segment (W2 x F)
+    % - features1: Feature matrix for the first segment (N1 x F)
+    % - features2: Feature matrix for the second segment (N2 x F)
     %
     % Output:
     % - distance: DTW distance between the two feature sets
