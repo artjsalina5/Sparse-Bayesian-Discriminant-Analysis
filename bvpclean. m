@@ -1,0 +1,116 @@
+% Load example BVP data
+load('exampleBVP.mat'); % Replace with your BVP signal
+fs = 100; % Sampling frequency in Hz
+
+% Step 1: Preprocess the BVP Signal
+bpFilt = designfilt('bandpassiir', ...
+    'FilterOrder', 4, ...
+    'HalfPowerFrequency1', 0.5, ...
+    'HalfPowerFrequency2', 5, ...
+    'SampleRate', fs);
+
+filteredBVP = filtfilt(bpFilt, BVP);
+
+% Step 2: Extract Features Using Wavelet Transform
+waveletName = 'db4'; % Daubechies wavelet
+level = 5; % Decomposition levels
+windowSize = fs * 10; % 10-second window
+numWindows = floor(length(filteredBVP) / windowSize);
+waveletFeatures = zeros(numWindows, level);
+
+for i = 1:numWindows
+    startIdx = (i-1) * windowSize + 1;
+    endIdx = i * windowSize;
+    window = filteredBVP(startIdx:endIdx);
+    
+    [C, L] = wavedec(window, level, waveletName);
+    details = detcoef(C, L, 'all');
+    
+    for j = 1:level
+        waveletFeatures(i, j) = sum(details{j}.^2); % Energy in each level
+    end
+end
+
+waveletFeatures = normalize(waveletFeatures);
+
+% Step 3: Extract Time-Frequency Features
+timeFreqFeatures = zeros(numWindows, 5); % Skewness, kurtosis, entropy, mean, std
+
+for i = 1:numWindows
+    startIdx = (i-1) * windowSize + 1;
+    endIdx = i * windowSize;
+    window = filteredBVP(startIdx:endIdx);
+    
+    skewnessVal = skewness(window);
+    kurtosisVal = kurtosis(window);
+    entropyVal = wentropy(window, 'shannon');
+    meanVal = mean(window);
+    stdVal = std(window);
+    
+    timeFreqFeatures(i, :) = [skewnessVal, kurtosisVal, entropyVal, meanVal, stdVal];
+end
+
+timeFreqFeatures = normalize(timeFreqFeatures);
+
+% Step 4: Combine Wavelet and Time-Frequency Features (Hybrid Approach)
+hybridFeatures = [waveletFeatures, timeFreqFeatures];
+
+% Step 5: Perform K-means Clustering
+numClusters = 2; % Good vs Bad signal
+[idx, centroids] = kmeans(hybridFeatures, numClusters, 'Replicates', 5);
+
+% Step 6: Visualizations
+
+% Plot Wavelet Features
+figure;
+time = (1:numWindows) * 10; % Window centers in seconds
+for j = 1:level
+    subplot(level, 1, j);
+    plot(time, waveletFeatures(:, j), '-o');
+    xlabel('Time (s)');
+    ylabel(['Energy Level ' num2str(j)]);
+    title(['Wavelet Feature (Level ' num2str(j) ')']);
+    grid on;
+end
+
+% Plot Time-Frequency Features
+figure;
+for j = 1:5
+    subplot(5, 1, j);
+    plot(time, timeFreqFeatures(:, j), '-o');
+    xlabel('Time (s)');
+    ylabel(['Feature ' num2str(j)]);
+    title(['Time-Frequency Feature ' num2str(j)]);
+    grid on;
+end
+
+% Plot Clustering Results (Hybrid Features)
+figure;
+gscatter(hybridFeatures(:, 1), hybridFeatures(:, 2), idx, 'rb', 'xo');
+xlabel('Feature 1 (Wavelet Energy Level 1)');
+ylabel('Feature 2 (Wavelet Energy Level 2)');
+title('K-means Clustering of Signal Quality');
+grid on;
+
+% Plot Cluster Assignments Over Time
+figure;
+scatter(time, idx, 'filled');
+xlabel('Time (s)');
+ylabel('Cluster Label');
+title('Cluster Assignments Over Time');
+grid on;
+
+% Highlight Good vs Bad Quality Windows
+goodCluster = mode(idx); % Majority cluster is "Good Quality"
+badCluster = 3 - goodCluster; % Other cluster is "Bad Quality"
+
+figure;
+plot(time, idx == goodCluster, '-o', 'DisplayName', 'Good Quality');
+hold on;
+plot(time, idx == badCluster, '-x', 'DisplayName', 'Bad Quality');
+xlabel('Time (s)');
+ylabel('Cluster Assignment');
+title('Good vs Bad Quality Windows');
+legend;
+grid on;
+hold off;
